@@ -1,0 +1,155 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: smartlock_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=${DB_NAME:-smartlock_db}
+      - POSTGRES_USER=${DB_USER:-smartlock_user}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-changeme123}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-smartlock_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - smartlock_network
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: smartlock_redis
+    command: redis-server
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - smartlock_network
+    restart: unless-stopped
+
+  # Django Application
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartlock_web
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4 --threads 2 --timeout 60 --access-logfile - --error-logfile -
+    volumes:
+      - ./:/app
+      - static_volume:/app/staticfiles
+      - media_volume:/app/mediafiles
+      - logs_volume:/app/logs
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - DATABASE_URL=postgresql://${DB_USER:-smartlock_user}:${DB_PASSWORD:-changeme123}@db:5432/${DB_NAME:-smartlock_db}
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - smartlock_network
+    restart: unless-stopped
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: smartlock_nginx
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - static_volume:/app/staticfiles:ro
+      - media_volume:/app/mediafiles:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - web
+    networks:
+      - smartlock_network
+    restart: unless-stopped
+
+  # Celery Worker (for async tasks)
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartlock_celery
+    command: celery -A config worker -l info
+    volumes:
+      - ./:/app
+      - logs_volume:/app/logs
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - DATABASE_URL=postgresql://${DB_USER:-smartlock_user}:${DB_PASSWORD:-changeme123}@db:5432/${DB_NAME:-smartlock_db}
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - smartlock_network
+    restart: unless-stopped
+
+  # Celery Beat (for scheduled tasks)
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartlock_celery_beat
+    command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - ./:/app
+      - logs_volume:/app/logs
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - DATABASE_URL=postgresql://${DB_USER:-smartlock_user}:${DB_PASSWORD:-changeme123}@db:5432/${DB_NAME:-smartlock_db}
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - smartlock_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  static_volume:
+    driver: local
+  media_volume:
+    driver: local
+  logs_volume:
+    driver: local
+
+networks:
+  smartlock_network:
+    driver: bridge

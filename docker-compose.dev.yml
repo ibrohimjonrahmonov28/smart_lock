@@ -1,0 +1,75 @@
+version: '3.9'
+
+# Development Docker Compose Configuration
+# Usage: docker-compose -f docker-compose.dev.yml up
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: smartlock_db_dev
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=smartlock_dev
+      - POSTGRES_USER=smartlock_user
+      - POSTGRES_PASSWORD=dev123
+    ports:
+      - "5432:5432"
+    networks:
+      - smartlock_network_dev
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: smartlock_redis_dev
+    command: redis-server --requirepass dev123
+    volumes:
+      - redis_data_dev:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - smartlock_network_dev
+    restart: unless-stopped
+
+  # Django Application (Development)
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartlock_web_dev
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./:/app
+      - static_volume_dev:/app/staticfiles
+      - media_volume_dev:/app/mediafiles
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - DEBUG=True
+      - DB_NAME=smartlock_dev
+      - DB_USER=smartlock_user
+      - DB_PASSWORD=dev123
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=dev123
+    depends_on:
+      - db
+      - redis
+    networks:
+      - smartlock_network_dev
+    restart: unless-stopped
+
+volumes:
+  postgres_data_dev:
+  redis_data_dev:
+  static_volume_dev:
+  media_volume_dev:
+
+networks:
+  smartlock_network_dev:
+    driver: bridge
