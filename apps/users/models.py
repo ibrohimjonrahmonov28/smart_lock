@@ -21,8 +21,8 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel, UUIDModel):
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
     
-    email_verified = models.BooleanField(default=False)
-    phone_verified = models.BooleanField(default=False)
+    email_verified = models.BooleanField(default=False,null=True)
+    phone_verified = models.BooleanField(default=False,null=True)
     
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)
     

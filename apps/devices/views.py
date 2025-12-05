@@ -14,6 +14,7 @@ import logging
 from .models import Device, DeviceLog, DeviceSharing
 from .serializers import (
     DeviceSerializer,
+    DeviceListSerializer,
     DeviceCreateSerializer,
     DeviceUpdateSerializer,
     DeviceUnlockSerializer,
@@ -22,7 +23,13 @@ from .serializers import (
     DeviceSharingCreateSerializer,
 )
 from .permissions import IsDeviceOwner, IsDeviceOwnerOrShared, CanUnlockDevice
-from .tasks import send_unlock_command, send_lock_command, log_device_event
+from .tasks import (
+    send_unlock_command,
+    send_lock_command,
+    log_device_event,
+    auto_unlock_if_no_response,
+    auto_lock_if_no_response,
+)
 from apps.core.throttling import UnlockRateThrottle
 
 logger = logging.getLogger(__name__)
@@ -49,15 +56,15 @@ class DeviceListCreateView(generics.ListCreateAPIView):
     def get_serializer_class(self):
         if self.request.method == 'POST':
             return DeviceCreateSerializer
-        return DeviceSerializer
+        return DeviceListSerializer
 
     @extend_schema(
         tags=['Devices'],
-        responses={200: DeviceSerializer(many=True)}
+        responses={200: DeviceListSerializer(many=True)}
     )
     def get(self, request, *args, **kwargs):
         queryset = self.get_queryset()
-        serializer = DeviceSerializer(queryset, many=True)
+        serializer = DeviceListSerializer(queryset, many=True, context={'request': request})
         return Response({
             'success': True,
             'count': queryset.count(),
@@ -68,22 +75,22 @@ class DeviceListCreateView(generics.ListCreateAPIView):
         tags=['Devices'],
         request=DeviceCreateSerializer,
         responses={
-            201: DeviceSerializer,
+            201: DeviceListSerializer,
             400: OpenApiResponse(description='Validation error'),
         }
     )
     def post(self, request, *args, **kwargs):
         serializer = DeviceCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         device = serializer.save(owner=request.user)
-        
+
         logger.info(f"New device created: {device.device_id} by {request.user.email}")
-        
+
         return Response({
             'success': True,
             'message': 'Device created successfully',
-            'data': DeviceSerializer(device).data
+            'data': DeviceListSerializer(device, context={'request': request}).data
         }, status=status.HTTP_201_CREATED)
 
 
@@ -194,9 +201,15 @@ class DeviceUnlockView(APIView):
             duration=duration,
             ip_address=request.META.get('REMOTE_ADDR'),
         )
-        
+
+        # Schedule auto-unlock after 3 seconds if no MQTT response (for testing/fallback)
+        auto_unlock_if_no_response.apply_async(
+            args=[str(device.id), duration],
+            countdown=3  # Wait 3 seconds
+        )
+
         logger.info(f"Unlock command sent: {device.device_id} by {request.user.email}")
-        
+
         return Response({
             'success': True,
             'message': 'Unlock command sent successfully',
@@ -234,9 +247,15 @@ class DeviceLockView(APIView):
             user_id=str(request.user.id),
             ip_address=request.META.get('REMOTE_ADDR'),
         )
-        
+
+        # Schedule auto-lock after 3 seconds if no MQTT response (for testing/fallback)
+        auto_lock_if_no_response.apply_async(
+            args=[str(device.id)],
+            countdown=3  # Wait 3 seconds
+        )
+
         logger.info(f"Lock command sent: {device.device_id} by {request.user.email}")
-        
+
         return Response({
             'success': True,
             'message': 'Lock command sent successfully'

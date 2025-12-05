@@ -26,13 +26,15 @@ services:
   redis:
     image: redis:7-alpine
     container_name: smartlock_redis
-    command: redis-server
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_default_pass}
     volumes:
       - redis_data:/data
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_default_pass}
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_default_pass}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

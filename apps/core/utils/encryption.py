@@ -44,3 +44,45 @@ def verify_hmac_signature(device_id, timestamp, signature, secret_key=None):
     """
     expected = generate_hmac_signature(device_id, timestamp, secret_key)
     return hmac.compare_digest(signature, expected)
+
+
+def generate_device_hmac(device_id, timestamp, nfc_uid_or_pin, device_secret):
+    """
+    Generate HMAC signature for device communication
+    Combines device_id, timestamp, and access code (NFC UID or PIN)
+
+    Args:
+        device_id: Device UUID
+        timestamp: Unix timestamp (int or str)
+        nfc_uid_or_pin: NFC UID or PIN code
+        device_secret: Device secret key
+
+    Returns:
+        HMAC signature (hex string)
+    """
+    message = f"{device_id}:{timestamp}:{nfc_uid_or_pin}"
+    signature = hmac.new(
+        device_secret.encode(),
+        message.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+    return signature
+
+
+def verify_device_hmac(device_id, timestamp, nfc_uid_or_pin, signature, device_secret):
+    """
+    Verify HMAC signature for device communication
+
+    Args:
+        device_id: Device UUID
+        timestamp: Unix timestamp (int or str)
+        nfc_uid_or_pin: NFC UID or PIN code
+        signature: HMAC signature to verify
+        device_secret: Device secret key
+
+    Returns:
+        bool: True if signature is valid
+    """
+    expected = generate_device_hmac(device_id, timestamp, nfc_uid_or_pin, device_secret)
+    return hmac.compare_digest(signature, expected)

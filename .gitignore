@@ -64,5 +64,6 @@ logs/
 celerybeat-schedule
 celerybeat.pid
 
-# Pytest
+# Pyte
 .pytest_cache/
+.CI_CD_SETUP_UZ.md

@@ -12,7 +12,10 @@
       "Bash(docker-compose restart:*)",
       "Bash(python3:*)",
       "Bash(docker-compose exec:*)",
-      "Bash(npm run dev)"
+      "Bash(npm run dev)",
+      "Bash(flutter run:*)",
+      "Bash(flutter clean:*)",
+      "Bash(flutter pub get:*)"
     ],
     "deny": [],
     "ask": []

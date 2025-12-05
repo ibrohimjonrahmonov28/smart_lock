@@ -155,25 +155,38 @@ class GuestAccessCreateSerializer(serializers.Serializer):
     access_type = serializers.ChoiceField(choices=['NFC', 'PIN'])
     valid_from = serializers.DateTimeField()
     valid_until = serializers.DateTimeField()
-    
+
     # For NFC
     nfc_uid = serializers.CharField(required=False, allow_blank=True)
-    
-    # For PIN
+
+    # For PIN - YANGI: Optional qilindi (avtomatik yaratish uchun)
     pin_code = serializers.CharField(required=False, allow_blank=True, min_length=4, max_length=8)
+
+    # YANGI: Avtomatik PIN yaratish
+    auto_generate_pin = serializers.BooleanField(required=False, default=True)
 
     def validate(self, attrs):
         """Validate based on access type"""
         access_type = attrs.get('access_type')
-        
+
         if access_type == 'NFC' and not attrs.get('nfc_uid'):
             raise serializers.ValidationError({'nfc_uid': 'NFC UID is required for NFC access'})
-        
-        if access_type == 'PIN' and not attrs.get('pin_code'):
-            raise serializers.ValidationError({'pin_code': 'PIN code is required for PIN access'})
-        
+
+        if access_type == 'PIN':
+            # Agar PIN berilmagan bo'lsa va auto_generate=True bo'lsa
+            if not attrs.get('pin_code'):
+                if attrs.get('auto_generate_pin', True):
+                    # Avtomatik PIN yaratish
+                    from .utils import generate_random_pin
+                    attrs['pin_code'] = generate_random_pin(6)
+                    attrs['_pin_auto_generated'] = True  # Flag for response
+                else:
+                    raise serializers.ValidationError({
+                        'pin_code': 'PIN code is required or set auto_generate_pin=true'
+                    })
+
         # Validate dates
         if attrs['valid_from'] >= attrs['valid_until']:
             raise serializers.ValidationError('valid_until must be after valid_from')
-        
+
         return attrs
